@@ -137,6 +137,8 @@ static void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 		np = nmsg_payload_make(pbuf, sz, vid, msgtype, &ts);
 		assert(np != NULL);
 		nmsg_output_append(buf, np);
+
+		shutdown(cli->fd, SHUT_RD);
 	} else if (revents & EV_WRITE) {
 		write(cli->fd, response, sizeof(response) - 1);
 		ev_io_stop(EV_A_ w);
