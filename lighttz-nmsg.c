@@ -1,4 +1,4 @@
-/* nmsg version */
+/* ISC SIE nmsg version */
 
 /*
 Copyright (c) 2008, Arek Bochinski
@@ -35,7 +35,6 @@ http://software.schmorp.de/pkg/libev.html
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
-#include <netinet/in.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -45,10 +44,10 @@ http://software.schmorp.de/pkg/libev.html
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,6 +75,7 @@ struct client {
 };
 
 static ev_io ev_accept;
+static struct sockaddr_in http_sock;
 
 static nmsg_buf buf;
 static nmsg_pbmod mod;
@@ -83,7 +83,7 @@ static nmsg_pbmodset ms;
 static unsigned vid, msgtype;
 static void *clos;
 
-int setnonblock(int fd) {
+static int setnonblock(int fd) {
 	int flags;
 
 	flags = fcntl(fd, F_GETFL);
@@ -98,8 +98,8 @@ int setnonblock(int fd) {
 
 static void timeout_cb(struct ev_loop *loop, struct ev_timer *w, int revents) {
 	struct client *cli = ((struct client*) (((char*)w) - offsetof(struct client,ev_timeout)));
+
 	ev_io_stop(EV_A_ &cli->io);
-	//ev_timer_stop(EV_A_ &cli->ev_timeout);
 	close(cli->fd);
 	free(cli);
 }
@@ -126,6 +126,7 @@ static void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 
 		nmsg_pbmod_field2pbuf(mod, clos, "type", (const u_char *) "sinkhole", sizeof("sinkhole"), NULL, NULL);
 		nmsg_pbmod_field2pbuf(mod, clos, "srcip", (const u_char *) &cli->sock.sin_addr.s_addr, 4, NULL, NULL);
+		nmsg_pbmod_field2pbuf(mod, clos, "dstip", (const u_char *) &http_sock.sin_addr.s_addr, 4, NULL, NULL);
 		srcport = htons(cli->sock.sin_port);
 		nmsg_pbmod_field2pbuf(mod, clos, "srcport", (const u_char *) &srcport, sizeof(srcport), NULL, NULL);
 		nmsg_pbmod_field2pbuf(mod, clos, "request", (const u_char *) rbuf, r + 1, NULL, NULL);
@@ -166,26 +167,27 @@ static void accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 }
 
 int main(int argc, char **argv) {
-	int listen_fd, nmsg_fd;
+	int http_fd, nmsg_fd;
 	static int reuseaddr_on = 1;
 	struct ev_loop *loop;
-	struct sockaddr_in listen_sock, nmsg_sock; 
-	char *http_port, *nmsg_addr, *nmsg_port;
+	struct sockaddr_in nmsg_sock; 
+	char *http_addr, *http_port, *nmsg_addr, *nmsg_port;
 
 	signal(SIGPIPE, SIG_IGN);
 
-	if (argc != 4)
-		err(1, "usage: %s <HTTPport> <NMSGaddr> <NMSGport>", argv[0]);
-	http_port = argv[1];
-	nmsg_addr = argv[2];
-	nmsg_port = argv[3];
+	if (argc != 5)
+		err(1, "usage: %s <HTTPaddress> <HTTPport> <NMSGaddr> <NMSGport>", argv[0]);
+	http_addr = argv[1];
+	http_port = argv[2];
+	nmsg_addr = argv[3];
+	nmsg_port = argv[4];
 
 	/* nmsg socket */
 	if (inet_pton(AF_INET, nmsg_addr, &nmsg_sock.sin_addr)) {
 		nmsg_sock.sin_family = AF_INET;
 		nmsg_sock.sin_port = htons(atoi(nmsg_port));
 	} else {
-		err(1, "inet_pton failed");
+		err(1, "nmsg_addr inet_pton failed");
 	}
 	nmsg_fd = socket(PF_INET, SOCK_DGRAM, 0);
 	if (nmsg_fd < 0)
@@ -212,31 +214,33 @@ int main(int argc, char **argv) {
 	clos = nmsg_pbmod_init(mod, 0);
 
 	/* http socket */
-	listen_fd = socket(AF_INET, SOCK_STREAM, 0); 
-	if (listen_fd < 0)
+	if (inet_pton(AF_INET, http_addr, &http_sock.sin_addr)) {
+		http_sock.sin_family = AF_INET;
+		http_sock.sin_port = htons(atoi(http_port));
+	} else {
+		err(1, "http_addr inet_pton failed");
+	}
+	http_fd = socket(PF_INET, SOCK_STREAM, 0); 
+	if (http_fd < 0)
 		err(1, "listen failed");
-	if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr_on,
+	if (setsockopt(http_fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr_on,
 		sizeof(reuseaddr_on)) == -1)
 	{
 		err(1, "setsockopt failed");
 	}
-	memset(&listen_sock, 0, sizeof(listen_sock));
-	listen_sock.sin_family = AF_INET;
-	listen_sock.sin_addr.s_addr = INADDR_ANY;
-	listen_sock.sin_port = htons(atoi(http_port));
-	if (bind(listen_fd, (struct sockaddr *) &listen_sock,
-		sizeof(listen_sock)) < 0)
+	if (bind(http_fd, (struct sockaddr *) &http_sock,
+		sizeof(http_sock)) < 0)
 	{
 		err(1, "bind failed");
 	}
-	if (listen(listen_fd, 128) < 0)
+	if (listen(http_fd, 128) < 0)
 		err(1, "listen failed");
-	if (setnonblock(listen_fd) < 0)
+	if (setnonblock(http_fd) < 0)
 		err(1, "failed to set server socket to non-blocking");
 
 	/* libev loop */
 	loop = ev_default_loop(0);
-	ev_io_init(&ev_accept, accept_cb, listen_fd, EV_READ);
+	ev_io_init(&ev_accept, accept_cb, http_fd, EV_READ);
 	ev_io_start(loop, &ev_accept);
 	ev_loop(loop, 0);
 
