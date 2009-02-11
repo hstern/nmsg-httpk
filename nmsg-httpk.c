@@ -140,7 +140,7 @@ void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	if (revents & EV_READ) {
 		r = read(cli->fd, &rbuf, sizeof(rbuf) - 1);
 		rbuf[r] = 0;
-#if defined(SHUTDOWN_HACK)
+#if SHUTDOWN_HACK
 		shutdown(cli->fd, SHUT_RD); /* vixie hack */
 #endif
 
@@ -196,7 +196,7 @@ void accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 		err(1, "failed to set client socket to non-blocking");
 
 	/* linger hack */
-#if defined(SOLINGER_HACK)
+#if SOLINGER_HACK
 	struct linger linger = { .l_onoff = 1, .l_linger = 0 };
 	setsockopt(client_fd, SOL_SOCKET, SO_LINGER, &linger, sizeof(linger));
 #endif
@@ -294,7 +294,7 @@ main(int argc, char **argv) {
 		err(1, "setsockopt failed");
 	}
 
-#if defined(__FreeBSD__) && defined(ACCF_HACK)
+#if __FreeBSD__ && ACCF_HACK
 	/* freebsd accf_http(9) hack */
 	struct accept_filter_arg afa;
 	bzero(&afa, sizeof(afa));
