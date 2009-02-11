@@ -1,7 +1,7 @@
-lighttz-nmsg: lighttz-nmsg.c
-	$(CC) -O3 -Wall -Wno-strict-aliasing -o lighttz-nmsg lighttz-nmsg.c -lev -lnmsg
+sie-nmsg-httpk: sie-nmsg-httpk.c
+	$(CC) -O2 -ggdb -Wall -Werror -Wno-strict-aliasing -o sie-nmsg-httpk sie-nmsg-httpk.c -lev -lnmsg
 
 clean:
-	rm -f lighttz-nmsg
+	rm -f sie-nmsg-httpk
 
 .PHONY: clean
