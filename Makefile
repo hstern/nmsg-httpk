@@ -1,5 +1,10 @@
+CFLAGS = -O2 -ggdb 
+WARN = -Wall -Werror -Wno-strict-aliasing
+INCLUDE = -I/usr/local/include
+LDFLAGS = -L/usr/local/lib -lev -lnmsg
+
 nmsg-httpk: nmsg-httpk.c
-	$(CC) -O2 -ggdb -Wall -Werror -Wno-strict-aliasing -o nmsg-httpk nmsg-httpk.c -lev -lnmsg
+	$(CC) $(CFLAGS) $(WARN) -o $@ $< $(INCLUDE) $(LDFLAGS)
 
 clean:
 	rm -f nmsg-httpk
