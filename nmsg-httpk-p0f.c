@@ -47,12 +47,13 @@ http://software.schmorp.de/pkg/libev.html
 */
 
 #include <arpa/inet.h>
-#include <assert.h>
 #include <netinet/in.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/un.h>
+#include <assert.h>
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -90,24 +91,32 @@ http://software.schmorp.de/pkg/libev.html
 #define struct_client_from(cli, field) \
 	((struct client *) (((char *) cli) - offsetof(struct client, field)))
 
-static struct ev_loop *loop;
-
 struct client {
 	int fd;
 	ev_io io;
 	ev_timer timeout;
 	struct sockaddr_in sock;
 };
-struct sockaddr_in http_sock;
+
+static struct ev_loop *loop;
+static struct sockaddr_in http_sock;
+static struct sockaddr_un p0f_sock;
 
 static Nmsg__Isc__Http http;
 static nmsg_buf buf;
 static nmsg_pbmod mod;
 static nmsg_pbmodset ms;
-static unsigned vid, msgtype;
 static void *clos;
 
-int
+static int setnonblock(int);
+static void timeout_cb(struct ev_loop *, struct ev_timer *, int);
+static void io_cb(struct ev_loop *, struct ev_io *, int);
+static void query_p0f(struct p0f_response *, uint32_t, uint32_t,
+		      uint16_t, uint16_t);
+static void accept_cb(struct ev_loop *, struct ev_io *, int);
+static void shutdown_handler(int);
+
+static int
 setnonblock(int fd) {
 	int flags;
 	flags = fcntl(fd, F_GETFL);
@@ -119,20 +128,22 @@ setnonblock(int fd) {
 	return (0);
 }
 
-static
-void timeout_cb(struct ev_loop *loop, struct ev_timer *w, int revents) {
+static void
+timeout_cb(struct ev_loop *loop, struct ev_timer *w, int revents) {
 	struct client *cli = struct_client_from(w, timeout);
 	ev_io_stop(EV_A_ &cli->io);
 	close(cli->fd);
 	free(cli);
 }
 
-static
-void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
+static void
+io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	struct client *cli = struct_client_from(w, io);
 	static char response[] = "HTTP/1.1 404 Not Found\r\n";
 	static char rbuf[1024];
+	struct p0f_response p;
 	int r = 0;
+	uint32_t srcip, dstip;
 
 	struct timespec ts;
 	Nmsg__NmsgPayload *np;
@@ -144,30 +155,93 @@ void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 		shutdown(cli->fd, SHUT_RD); /* vixie hack */
 #endif
 
+		nmsg_time_get(&ts);
+
+		srcip = cli->sock.sin_addr.s_addr;
+		dstip = http_sock.sin_addr.s_addr;
+
 		ev_io_stop(loop, w);
 		ev_io_init(&cli->io, io_cb, cli->fd, EV_WRITE);
 		ev_io_start(loop, w);
 
-		http.srcip.data = (uint8_t *) &cli->sock.sin_addr.s_addr;
+		http.srcip.data = (uint8_t *) &srcip;
 		http.srcip.len = 4;
 		http.has_srcip = true;
 
-		http.srcport = htons(cli->sock.sin_port);
+		http.srcport = ntohs(cli->sock.sin_port);
 		http.has_srcport = true;
 
-		http.dstip.data = (uint8_t *) &http_sock.sin_addr.s_addr;
+		http.dstip.data = (uint8_t *) &dstip;
 		http.dstip.len = 4;
 		http.has_dstip = true;
 
-		http.dstport = htons(http_sock.sin_port);
+		http.dstport = ntohs(http_sock.sin_port);
 		http.has_dstport = true;
 
 		http.request.data = (uint8_t *) rbuf;
 		http.request.len = r + 1;
 		http.has_request = true;
 
-		nmsg_time_get(&ts);
-		np = nmsg_payload_from_message(&http, vid, msgtype, &ts);
+		memset(&p, 0, sizeof(p));
+		query_p0f(&p, srcip, dstip, http.srcport, http.dstport);
+		if (p.type == P0F_RESP_OK) {
+			if (p.genre[0] != '\0') {
+				http.p0f_genre.data = p.genre;
+				http.p0f_genre.len = strlen((char *) p.genre);
+				http.has_p0f_genre = true;
+			}
+			if (p.detail[0] != '\0') {
+				http.p0f_detail.data = p.detail;
+				http.p0f_detail.len = strlen((char *) p.detail);
+				http.has_p0f_detail = true;
+			}
+			if (p.link[0] != '\0') {
+				http.p0f_link.data = p.link;
+				http.p0f_link.len = strlen((char *) p.link);
+				http.has_p0f_link = true;
+			}
+			if (p.tos[0] != '\0') {
+				http.p0f_tos.data = p.tos;
+				http.p0f_tos.len = strlen((char *) p.tos);
+				http.has_p0f_tos = true;
+			}
+
+			if (p.dist != 0) {
+				http.p0f_dist = p.dist;
+				http.has_p0f_dist = true;
+			}
+
+			if (p.fw != 0) {
+				http.p0f_fw = p.fw;
+				http.has_p0f_fw = true;
+			}
+
+			if (p.nat != 0) {
+				http.p0f_nat = p.nat;
+				http.has_p0f_nat = true;
+			}
+
+			if (p.real != 0) {
+				http.p0f_real = p.real;
+				http.has_p0f_real = true;
+			}
+
+			if (p.score != 0) {
+				http.p0f_score = p.score;
+				http.has_p0f_score = true;
+			}
+
+			if (p.mflags != 0) {
+				http.p0f_mflags = p.mflags;
+				http.has_p0f_mflags = true;
+			}
+
+			http.p0f_uptime = p.uptime;
+			http.has_p0f_uptime = true;
+		}
+
+		np = nmsg_payload_from_message(&http, NMSG_VENDOR_ISC_ID,
+					       MSGTYPE_HTTP_ID, &ts);
 		assert(np != NULL);
 		nmsg_output_append(buf, np);
 	} else if (revents & EV_WRITE) {
@@ -179,8 +253,42 @@ void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	}
 }
 
-static
-void accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
+static void
+query_p0f(struct p0f_response *r,
+	  uint32_t srcip, uint32_t dstip,
+	  uint16_t srcport, uint16_t dstport)
+{
+	int fd;
+	struct p0f_query q = {
+		.magic		= P0F_QUERY_MAGIC,
+		.id		= 0xdeadbeef,
+		.type		= P0F_QTYPE_FP,
+		.src_ip		= srcip,
+		.dst_ip		= dstip,
+		.src_port	= srcport,
+		.dst_port	= dstport
+	};
+
+	fd = socket(PF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0)
+		err(1, "p0f socket failed");
+	if (connect(fd, (struct sockaddr *) &p0f_sock, sizeof(p0f_sock)))
+		err(1, "p0f connect failed");
+
+	if (write(fd, &q, sizeof(q)) != sizeof(q))
+		err(1, "p0f socket write error");
+	if (read(fd, r, sizeof(*r)) != sizeof(*r))
+		err(1, "p0f socket read error");
+	if (r->magic != P0F_QUERY_MAGIC)
+		err(1, "bad p0f response magic");
+	if (r->type == P0F_RESP_BADQUERY)
+		err(1, "p0f did not honor our query");
+
+	close(fd);
+}
+
+static void
+accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	int client_fd;
 	struct client *client;
 	struct sockaddr_in client_addr;
@@ -207,8 +315,8 @@ void accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	ev_io_start(loop, &client->io);
 }
 
-static
-void shutdown_handler(int signum) {
+static void
+shutdown_handler(int signum) {
 	ev_unloop(loop, EVUNLOOP_ALL);
 	nmsg_pbmod_fini(mod, &clos);
 	nmsg_output_close(&buf);
@@ -218,7 +326,7 @@ void shutdown_handler(int signum) {
 
 int
 main(int argc, char **argv) {
-	const char *http_addr, *http_port, *nmsg_addr, *nmsg_port;
+	const char *p0f_path, *http_addr, *http_port, *nmsg_addr, *nmsg_port;
 	ev_io ev_accept;
 	int http_fd, nmsg_fd;
 	nmsg_res res;
@@ -228,12 +336,19 @@ main(int argc, char **argv) {
 	signal(SIGPIPE, SIG_IGN);
 	signal(SIGINT, shutdown_handler);
 	signal(SIGTERM, shutdown_handler);
-	if (argc != 5)
-		err(1, "usage: %s <HTTPaddr> <HTTPport> <NMSGaddr> <NMSGport>", argv[0]);
-	http_addr = argv[1];
-	http_port = argv[2];
-	nmsg_addr = argv[3];
-	nmsg_port = argv[4];
+	if (argc != 6) {
+		fprintf(stderr, "usage: %s <P0Fsock> <HTTPaddr> <HTTPport> <NMSGaddr> <NMSGport>\n", argv[0]);
+		return (1);
+	}
+	p0f_path = argv[1];
+	http_addr = argv[2];
+	http_port = argv[3];
+	nmsg_addr = argv[4];
+	nmsg_port = argv[5];
+
+	/* p0f sockaddr */
+	p0f_sock.sun_family = AF_UNIX;
+	strncpy(p0f_sock.sun_path, p0f_path, sizeof(p0f_sock.sun_path));
 
 	/* nmsg socket */
 	if (inet_pton(AF_INET, nmsg_addr, &nmsg_sock.sin_addr)) {
