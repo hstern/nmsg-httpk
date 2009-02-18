@@ -11,13 +11,13 @@ typedef signed short		_s16;
 typedef signed int		_s32;
 typedef signed long long	_s64;
 
-#define QUERY_MAGIC		0x0defaced
+#define P0F_QUERY_MAGIC		0x0defaced
 
-#define QTYPE_FINGERPRINT	1
+#define P0F_QTYPE_FP		1
 
-#define RESP_OK			0
-#define RESP_BADQUERY		1
-#define RESP_NOMATCH		2
+#define P0F_RESP_OK		0
+#define P0F_RESP_BADQUERY	1
+#define P0F_RESP_NOMATCH	2
 
 struct p0f_query {
 	_u32	magic;
