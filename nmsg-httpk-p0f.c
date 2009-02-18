@@ -74,11 +74,11 @@ http://software.schmorp.de/pkg/libev.html
 #include <nmsg/pbmod.h>
 #include <nmsg/pbmodset.h>
 #include <nmsg/time.h>
-#include <nmsg/isc/http.pb-c.h>
+#include <nmsg/isc/pbnmsg_isc_http.h>
+
+#include "p0f-query.h"
 
 #define MODULE_DIR      "/usr/local/lib/nmsg"
-#define MODULE_VENDOR   "ISC"
-#define MODULE_MSGTYPE  "http"
 
 #define DATA_TIMEOUT	2.0
 #define BACKLOG		128
@@ -262,9 +262,7 @@ main(int argc, char **argv) {
 		err(1, "unable to nmsg_pbmodset_init()");
 
 	/* http pbnmsg module */
-	vid = nmsg_pbmodset_vname_to_vid(ms, MODULE_VENDOR);
-	msgtype = nmsg_pbmodset_mname_to_msgtype(ms, vid, MODULE_MSGTYPE);
-	mod = nmsg_pbmodset_lookup(ms, vid, msgtype);
+	mod = nmsg_pbmodset_lookup(ms, NMSG_VENDOR_ISC_ID, MSGTYPE_HTTP_ID);
 	if (mod == NULL)
 		err(1, "unable to acquire module handle");
 	res = nmsg_pbmod_init(mod, &clos, 0);
