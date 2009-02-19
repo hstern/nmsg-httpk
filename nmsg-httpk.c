@@ -136,6 +136,7 @@ void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 
 	struct timespec ts;
 	Nmsg__NmsgPayload *np;
+	nmsg_res res;
 
 	if (revents & EV_READ) {
 		r = read(cli->fd, &rbuf, sizeof(rbuf) - 1);
