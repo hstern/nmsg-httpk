@@ -144,6 +144,9 @@ void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 		shutdown(cli->fd, SHUT_RD); /* vixie hack */
 #endif
 		memset(&http, 0, sizeof(http));
+		res = nmsg_pbmod_message_init(mod, &http);
+		if (res != nmsg_res_success)
+			err(1, "unable to initialize http message");
 		http.type = NMSG__ISC__HTTP_TYPE__sinkhole;
 
 		ev_io_stop(loop, w);
