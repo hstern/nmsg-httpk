@@ -187,22 +187,22 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 		if (p.type == P0F_RESP_OK) {
 			if (p.genre[0] != '\0') {
 				http.p0f_genre.data = p.genre;
-				http.p0f_genre.len = strlen((char *) p.genre);
+				http.p0f_genre.len = strlen((char *) p.genre) + 1;
 				http.has_p0f_genre = true;
 			}
 			if (p.detail[0] != '\0') {
 				http.p0f_detail.data = p.detail;
-				http.p0f_detail.len = strlen((char *) p.detail);
+				http.p0f_detail.len = strlen((char *) p.detail) + 1;
 				http.has_p0f_detail = true;
 			}
 			if (p.link[0] != '\0') {
 				http.p0f_link.data = p.link;
-				http.p0f_link.len = strlen((char *) p.link);
+				http.p0f_link.len = strlen((char *) p.link) + 1;
 				http.has_p0f_link = true;
 			}
 			if (p.tos[0] != '\0') {
 				http.p0f_tos.data = p.tos;
-				http.p0f_tos.len = strlen((char *) p.tos);
+				http.p0f_tos.len = strlen((char *) p.tos) + 1;
 				http.has_p0f_tos = true;
 			}
 
