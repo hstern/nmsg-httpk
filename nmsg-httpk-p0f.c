@@ -154,6 +154,7 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 #if SHUTDOWN_HACK
 		shutdown(cli->fd, SHUT_RD); /* vixie hack */
 #endif
+		memset(&http, 0, sizeof(http));
 
 		nmsg_time_get(&ts);
 

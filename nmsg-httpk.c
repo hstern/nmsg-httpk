@@ -143,6 +143,7 @@ void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 #if SHUTDOWN_HACK
 		shutdown(cli->fd, SHUT_RD); /* vixie hack */
 #endif
+		memset(&http, 0, sizeof(http));
 
 		ev_io_stop(loop, w);
 		ev_io_init(&cli->io, io_cb, cli->fd, EV_WRITE);
