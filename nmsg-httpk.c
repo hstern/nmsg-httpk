@@ -98,7 +98,6 @@ struct client {
 	ev_timer timeout;
 	struct sockaddr_in sock;
 };
-struct sockaddr_in http_sock;
 
 static Nmsg__Isc__Http http;
 static nmsg_buf buf;
@@ -138,6 +137,9 @@ void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	Nmsg__NmsgPayload *np;
 	nmsg_res res;
 
+	struct sockaddr_in http_sock;
+	socklen_t http_sock_len;
+
 	if (revents & EV_READ) {
 		r = read(cli->fd, &rbuf, sizeof(rbuf) - 1);
 		rbuf[r] = 0;
@@ -161,12 +163,19 @@ void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 		http.srcport = htons(cli->sock.sin_port);
 		http.has_srcport = true;
 
-		http.dstip.data = (uint8_t *) &http_sock.sin_addr.s_addr;
-		http.dstip.len = 4;
-		http.has_dstip = true;
+		http_sock_len = sizeof(http_sock);
+		if (getsockname(cli->fd, (struct sockaddr *) &http_sock,
+				&http_sock_len) != 0)
+		{
+			perror("getsockname");
+		} else {
+			http.dstip.data = (uint8_t *) &http_sock.sin_addr.s_addr;
+			http.dstip.len = 4;
+			http.has_dstip = true;
 
-		http.dstport = htons(http_sock.sin_port);
-		http.has_dstport = true;
+			http.dstport = htons(http_sock.sin_port);
+			http.has_dstport = true;
+		}
 
 		http.request.data = (uint8_t *) rbuf;
 		http.request.len = r + 1;
@@ -229,7 +238,7 @@ main(int argc, char **argv) {
 	int http_fd, nmsg_fd;
 	nmsg_res res;
 	static int reuseaddr_on = 1;
-	struct sockaddr_in nmsg_sock;
+	struct sockaddr_in http_sock, nmsg_sock;
 
 	signal(SIGPIPE, SIG_IGN);
 	signal(SIGINT, shutdown_handler);
