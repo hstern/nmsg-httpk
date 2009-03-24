@@ -47,12 +47,12 @@ http://software.schmorp.de/pkg/libev.html
 */
 
 #include <arpa/inet.h>
-#include <assert.h>
 #include <netinet/in.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <assert.h>
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -74,11 +74,9 @@ http://software.schmorp.de/pkg/libev.html
 #include <nmsg/pbmod.h>
 #include <nmsg/pbmodset.h>
 #include <nmsg/time.h>
-#include <nmsg/isc/http.pb-c.h>
+#include <nmsg/isc/pbnmsg_isc_http.h>
 
 #define MODULE_DIR      "/usr/local/lib/nmsg"
-#define MODULE_VENDOR   "ISC"
-#define MODULE_MSGTYPE  "http"
 
 #define DATA_TIMEOUT	2.0
 #define BACKLOG		128
@@ -90,8 +88,6 @@ http://software.schmorp.de/pkg/libev.html
 #define struct_client_from(cli, field) \
 	((struct client *) (((char *) cli) - offsetof(struct client, field)))
 
-static struct ev_loop *loop;
-
 struct client {
 	int fd;
 	ev_io io;
@@ -99,14 +95,21 @@ struct client {
 	struct sockaddr_in sock;
 };
 
+static struct ev_loop *loop;
+
 static Nmsg__Isc__Http http;
 static nmsg_buf buf;
 static nmsg_pbmod mod;
 static nmsg_pbmodset ms;
-static unsigned vid, msgtype;
 static void *clos;
 
-int
+static int setnonblock(int);
+static void timeout_cb(struct ev_loop *, struct ev_timer *, int);
+static void io_cb(struct ev_loop *, struct ev_io *, int);
+static void accept_cb(struct ev_loop *, struct ev_io *, int);
+static void shutdown_handler(int);
+
+static int
 setnonblock(int fd) {
 	int flags;
 	flags = fcntl(fd, F_GETFL);
@@ -118,16 +121,16 @@ setnonblock(int fd) {
 	return (0);
 }
 
-static
-void timeout_cb(struct ev_loop *loop, struct ev_timer *w, int revents) {
+static void
+timeout_cb(struct ev_loop *loop, struct ev_timer *w, int revents) {
 	struct client *cli = struct_client_from(w, timeout);
 	ev_io_stop(EV_A_ &cli->io);
 	close(cli->fd);
 	free(cli);
 }
 
-static
-void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
+static void
+io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	struct client *cli = struct_client_from(w, io);
 	static char response[] = "HTTP/1.1 404 Not Found\r\n";
 	static char rbuf[1024];
@@ -182,7 +185,8 @@ void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 		http.has_request = true;
 
 		nmsg_time_get(&ts);
-		np = nmsg_payload_from_message(&http, vid, msgtype, &ts);
+		np = nmsg_payload_from_message(&http, NMSG_VENDOR_ISC_ID,
+					       MSGTYPE_HTTP_ID, &ts);
 		assert(np != NULL);
 		nmsg_output_append(buf, np);
 	} else if (revents & EV_WRITE) {
@@ -194,8 +198,8 @@ void io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	}
 }
 
-static
-void accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
+static void
+accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	int client_fd;
 	struct client *client;
 	struct sockaddr_in client_addr;
@@ -222,8 +226,8 @@ void accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	ev_io_start(loop, &client->io);
 }
 
-static
-void shutdown_handler(int signum) {
+static void
+shutdown_handler(int signum) {
 	ev_unloop(loop, EVUNLOOP_ALL);
 	nmsg_pbmod_fini(mod, &clos);
 	nmsg_output_close(&buf);
@@ -277,9 +281,7 @@ main(int argc, char **argv) {
 		err(1, "unable to nmsg_pbmodset_init()");
 
 	/* http pbnmsg module */
-	vid = nmsg_pbmodset_vname_to_vid(ms, MODULE_VENDOR);
-	msgtype = nmsg_pbmodset_mname_to_msgtype(ms, vid, MODULE_MSGTYPE);
-	mod = nmsg_pbmodset_lookup(ms, vid, msgtype);
+	mod = nmsg_pbmodset_lookup(ms, NMSG_VENDOR_ISC_ID, MSGTYPE_HTTP_ID);
 	if (mod == NULL)
 		err(1, "unable to acquire module handle");
 	res = nmsg_pbmod_init(mod, &clos, 0);
