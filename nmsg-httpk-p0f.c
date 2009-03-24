@@ -99,7 +99,6 @@ struct client {
 };
 
 static struct ev_loop *loop;
-static struct sockaddr_in http_sock;
 static struct sockaddr_un p0f_sock;
 
 static Nmsg__Isc__Http http;
@@ -149,6 +148,9 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	Nmsg__NmsgPayload *np;
 	nmsg_res res;
 
+	struct sockaddr_in http_sock;
+	socklen_t http_sock_len;
+
 	if (revents & EV_READ) {
 		r = read(cli->fd, &rbuf, sizeof(rbuf) - 1);
 		rbuf[r] = 0;
@@ -161,14 +163,20 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 			err(1, "unable to initialize http message");
 		http.type = NMSG__ISC__HTTP_TYPE__sinkhole;
 
-		nmsg_time_get(&ts);
-
-		srcip = cli->sock.sin_addr.s_addr;
-		dstip = http_sock.sin_addr.s_addr;
-
 		ev_io_stop(loop, w);
 		ev_io_init(&cli->io, io_cb, cli->fd, EV_WRITE);
 		ev_io_start(loop, w);
+
+		http_sock_len = sizeof(http_sock);
+		if (getsockname(cli->fd, (struct sockaddr *) &http_sock,
+				&http_sock_len) != 0)
+		{
+			perror("getsockname");
+			return;
+		}
+
+		srcip = cli->sock.sin_addr.s_addr;
+		dstip = http_sock.sin_addr.s_addr;
 
 		http.srcip.data = (uint8_t *) &srcip;
 		http.srcip.len = 4;
@@ -246,6 +254,7 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 			http.has_p0f_uptime = true;
 		}
 
+		nmsg_time_get(&ts);
 		np = nmsg_payload_from_message(&http, NMSG_VENDOR_ISC_ID,
 					       MSGTYPE_HTTP_ID, &ts);
 		assert(np != NULL);
@@ -337,7 +346,7 @@ main(int argc, char **argv) {
 	int http_fd, nmsg_fd;
 	nmsg_res res;
 	static int reuseaddr_on = 1;
-	struct sockaddr_in nmsg_sock;
+	struct sockaddr_in http_sock, nmsg_sock;
 
 	signal(SIGPIPE, SIG_IGN);
 	signal(SIGINT, shutdown_handler);
