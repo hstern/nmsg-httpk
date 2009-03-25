@@ -52,6 +52,7 @@ http://software.schmorp.de/pkg/libev.html
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/un.h>
 #include <assert.h>
 #include <err.h>
 #include <errno.h>
@@ -87,6 +88,14 @@ http://software.schmorp.de/pkg/libev.html
 
 #define struct_client_from(cli, field) \
 	((struct client *) (((char *) cli) - offsetof(struct client, field)))
+
+#if USE_P0F
+# include "p0f-query.h"
+
+static struct sockaddr_un p0f_sock;
+static void query_p0f(struct p0f_response *, uint32_t, uint32_t,
+		      uint16_t, uint16_t);
+#endif
 
 struct client {
 	int fd;
@@ -135,6 +144,7 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	static char response[] = "HTTP/1.1 404 Not Found\r\n";
 	static char rbuf[1024];
 	int r = 0;
+	uint32_t srcip, dstip;
 
 	struct timespec ts;
 	Nmsg__NmsgPayload *np;
@@ -142,6 +152,10 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 
 	struct sockaddr_in http_sock;
 	socklen_t http_sock_len;
+
+#if USE_P0F
+	struct p0f_response p;
+#endif
 
 	if (revents & EV_READ) {
 		r = read(cli->fd, &rbuf, sizeof(rbuf) - 1);
@@ -159,30 +173,94 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 		ev_io_init(&cli->io, io_cb, cli->fd, EV_WRITE);
 		ev_io_start(loop, w);
 
-		http.srcip.data = (uint8_t *) &cli->sock.sin_addr.s_addr;
-		http.srcip.len = 4;
-		http.has_srcip = true;
-
-		http.srcport = htons(cli->sock.sin_port);
-		http.has_srcport = true;
-
 		http_sock_len = sizeof(http_sock);
 		if (getsockname(cli->fd, (struct sockaddr *) &http_sock,
 				&http_sock_len) != 0)
 		{
 			perror("getsockname");
-		} else {
-			http.dstip.data = (uint8_t *) &http_sock.sin_addr.s_addr;
-			http.dstip.len = 4;
-			http.has_dstip = true;
-
-			http.dstport = htons(http_sock.sin_port);
-			http.has_dstport = true;
+			return;
 		}
+
+		srcip = cli->sock.sin_addr.s_addr;
+		dstip = http_sock.sin_addr.s_addr;
+
+		http.srcip.data = (uint8_t *) &srcip;
+		http.srcip.len = 4;
+		http.has_srcip = true;
+
+		http.srcport = ntohs(cli->sock.sin_port);
+		http.has_srcport = true;
+
+		http.dstip.data = (uint8_t *) &dstip;
+		http.dstip.len = 4;
+		http.has_dstip = true;
+
+		http.dstport = ntohs(http_sock.sin_port);
+		http.has_dstport = true;
 
 		http.request.data = (uint8_t *) rbuf;
 		http.request.len = r + 1;
 		http.has_request = true;
+
+#if USE_P0F
+		memset(&p, 0, sizeof(p));
+		query_p0f(&p, srcip, dstip, http.srcport, http.dstport);
+		if (p.type == P0F_RESP_OK) {
+			if (p.genre[0] != '\0') {
+				http.p0f_genre.data = p.genre;
+				http.p0f_genre.len = strlen((char *) p.genre) + 1;
+				http.has_p0f_genre = true;
+			}
+			if (p.detail[0] != '\0') {
+				http.p0f_detail.data = p.detail;
+				http.p0f_detail.len = strlen((char *) p.detail) + 1;
+				http.has_p0f_detail = true;
+			}
+			if (p.link[0] != '\0') {
+				http.p0f_link.data = p.link;
+				http.p0f_link.len = strlen((char *) p.link) + 1;
+				http.has_p0f_link = true;
+			}
+			if (p.tos[0] != '\0') {
+				http.p0f_tos.data = p.tos;
+				http.p0f_tos.len = strlen((char *) p.tos) + 1;
+				http.has_p0f_tos = true;
+			}
+
+			if (p.dist != 0) {
+				http.p0f_dist = p.dist;
+				http.has_p0f_dist = true;
+			}
+
+			if (p.fw != 0) {
+				http.p0f_fw = p.fw;
+				http.has_p0f_fw = true;
+			}
+
+			if (p.nat != 0) {
+				http.p0f_nat = p.nat;
+				http.has_p0f_nat = true;
+			}
+
+			if (p.real != 0) {
+				http.p0f_real = p.real;
+				http.has_p0f_real = true;
+			}
+
+			if (p.score != 0) {
+				http.p0f_score = p.score;
+				http.has_p0f_score = true;
+			}
+
+			if (p.mflags != 0) {
+				http.p0f_mflags = p.mflags;
+				http.has_p0f_mflags = true;
+			}
+
+			http.p0f_uptime = p.uptime;
+			http.has_p0f_uptime = true;
+		}
+#endif
 
 		nmsg_time_get(&ts);
 		np = nmsg_payload_from_message(&http, NMSG_VENDOR_ISC_ID,
@@ -235,8 +313,47 @@ shutdown_handler(int signum) {
 	exit(0);
 }
 
+#if USE_P0F
+static void
+query_p0f(struct p0f_response *r,
+	  uint32_t srcip, uint32_t dstip,
+	  uint16_t srcport, uint16_t dstport)
+{
+	int fd;
+	struct p0f_query q = {
+		.magic		= P0F_QUERY_MAGIC,
+		.id		= 0xdeadbeef,
+		.type		= P0F_QTYPE_FP,
+		.src_ip		= srcip,
+		.dst_ip		= dstip,
+		.src_port	= srcport,
+		.dst_port	= dstport
+	};
+
+	fd = socket(PF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0)
+		err(1, "p0f socket failed");
+	if (connect(fd, (struct sockaddr *) &p0f_sock, sizeof(p0f_sock)))
+		err(1, "p0f connect failed");
+
+	if (write(fd, &q, sizeof(q)) != sizeof(q))
+		err(1, "p0f socket write error");
+	if (read(fd, r, sizeof(*r)) != sizeof(*r))
+		err(1, "p0f socket read error");
+	if (r->magic != P0F_QUERY_MAGIC)
+		err(1, "bad p0f response magic");
+	if (r->type == P0F_RESP_BADQUERY)
+		err(1, "p0f did not honor our query");
+
+	close(fd);
+}
+#endif
+
 int
 main(int argc, char **argv) {
+#if USE_P0F
+	const char *p0f_path;
+#endif
 	const char *http_addr, *http_port, *nmsg_addr, *nmsg_port;
 	ev_io ev_accept;
 	int http_fd, nmsg_fd;
@@ -244,11 +361,27 @@ main(int argc, char **argv) {
 	static int reuseaddr_on = 1;
 	struct sockaddr_in http_sock, nmsg_sock;
 
+	/* setup signal handlers */
 	signal(SIGPIPE, SIG_IGN);
 	signal(SIGINT, shutdown_handler);
 	signal(SIGTERM, shutdown_handler);
-	if (argc != 5)
-		err(1, "usage: %s <HTTPaddr> <HTTPport> <NMSGaddr> <NMSGport>", argv[0]);
+
+#if USE_P0F
+	if (argc != 6) {
+		fprintf(stderr, "usage: %s <HTTPaddr> <HTTPport> <NMSGaddr> <NMSGport> <P0Fsock>\n", argv[0]);
+		return (1);
+	}
+	p0f_path = argv[5];
+
+	/* p0f sockaddr */
+	p0f_sock.sun_family = AF_UNIX;
+	strncpy(p0f_sock.sun_path, p0f_path, sizeof(p0f_sock.sun_path));
+#else
+	if (argc != 5) {
+		fprintf(stderr, "usage: %s <HTTPaddr> <HTTPport> <NMSGaddr> <NMSGport>\n", argv[0]);
+		return (1);
+	}
+#endif
 	http_addr = argv[1];
 	http_port = argv[2];
 	nmsg_addr = argv[3];
