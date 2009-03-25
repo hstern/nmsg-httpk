@@ -3,6 +3,7 @@ CFLAGS = -O2 -ggdb
 WARN = -Wall -Werror -Wno-strict-aliasing
 INCLUDE = -I/usr/local/include
 LDFLAGS = -L/usr/local/lib -lev -lnmsg
+DESTDIR = /usr/local
 
 BIN = nmsg-httpk nmsg-httpk-p0f
 SRC = nmsg-httpk.c
@@ -18,4 +19,7 @@ nmsg-httpk-p0f: nmsg-httpk.c
 clean:
 	rm -f $(BIN)
 
-.PHONY: all clean
+install:
+	install -m 0755 $(BIN) $(DESTDIR)/bin
+
+.PHONY: all clean install
