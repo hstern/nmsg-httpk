@@ -70,14 +70,7 @@ http://software.schmorp.de/pkg/libev.html
 #include <ev.h>
 
 #include <nmsg.h>
-#include <nmsg/output.h>
-#include <nmsg/payload.h>
-#include <nmsg/pbmod.h>
-#include <nmsg/pbmodset.h>
-#include <nmsg/time.h>
-#include <nmsg/isc/pbnmsg_isc_http.h>
-
-#define MODULE_DIR      "/usr/local/lib/nmsg"
+#include <nmsg/isc/nmsgpb_isc_http.h>
 
 #define DATA_TIMEOUT	2.0
 #define BACKLOG		128
@@ -104,13 +97,13 @@ struct client {
 	struct sockaddr_in sock;
 };
 
-static struct ev_loop *loop;
+static struct ev_loop	*loop;
 
-static Nmsg__Isc__Http http;
-static nmsg_buf buf;
-static nmsg_pbmod mod;
-static nmsg_pbmodset ms;
-static void *clos;
+static Nmsg__Isc__Http	http;
+static nmsg_output_t	output;
+static nmsg_pbmod_t	mod;
+static nmsg_pbmodset_t	ms;
+static void		*clos;
 
 static int setnonblock(int);
 static void timeout_cb(struct ev_loop *, struct ev_timer *, int);
@@ -262,11 +255,11 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 		}
 #endif
 
-		nmsg_time_get(&ts);
+		nmsg_timespec_get(&ts);
 		np = nmsg_payload_from_message(&http, NMSG_VENDOR_ISC_ID,
 					       MSGTYPE_HTTP_ID, &ts);
 		assert(np != NULL);
-		nmsg_output_append(buf, np);
+		nmsg_output_write(output, np);
 	} else if (revents & EV_WRITE) {
 		write(cli->fd, response, sizeof(response) - 1);
 		ev_io_stop(EV_A_ w);
@@ -308,7 +301,7 @@ static void
 shutdown_handler(int signum) {
 	ev_unloop(loop, EVUNLOOP_ALL);
 	nmsg_pbmod_fini(mod, &clos);
-	nmsg_output_close(&buf);
+	nmsg_output_close(&output);
 	nmsg_pbmodset_destroy(&ms);
 	exit(0);
 }
@@ -403,13 +396,13 @@ main(int argc, char **argv) {
 		err(1, "connect failed");
 	}
 
-	/* nmsg output buf */
-	buf = nmsg_output_open_sock(nmsg_fd, 8000);
-	if (buf == NULL)
+	/* nmsg output */
+	output = nmsg_output_open_sock(nmsg_fd, NMSG_WBUFSZ_JUMBO);
+	if (output == NULL)
 		err(1, "unable to nmsg_output_open_sock()");
 
 	/* nmsg modules */
-	ms = nmsg_pbmodset_init(MODULE_DIR, 0);
+	ms = nmsg_pbmodset_init(NULL, 0);
 	if (ms == NULL)
 		err(1, "unable to nmsg_pbmodset_init()");
 
@@ -417,7 +410,7 @@ main(int argc, char **argv) {
 	mod = nmsg_pbmodset_lookup(ms, NMSG_VENDOR_ISC_ID, MSGTYPE_HTTP_ID);
 	if (mod == NULL)
 		err(1, "unable to acquire module handle");
-	res = nmsg_pbmod_init(mod, &clos, 0);
+	res = nmsg_pbmod_init(mod, &clos);
 	if (res != nmsg_res_success)
 		err(1, "unable to initialize module");
 
