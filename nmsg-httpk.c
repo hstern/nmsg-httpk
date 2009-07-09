@@ -72,6 +72,8 @@ http://software.schmorp.de/pkg/libev.html
 #include <nmsg.h>
 #include <nmsg/isc/nmsgpb_isc_http.h>
 
+#define STATS_TIMEOUT	60.0
+
 #define DATA_TIMEOUT	2.0
 #define BACKLOG		128
 
@@ -105,6 +107,12 @@ static nmsg_pbmod_t	mod;
 static nmsg_pbmodset_t	ms;
 static void		*clos;
 
+static uint64_t		count_active = 0;
+static uint64_t		count_closed = 0;
+static uint64_t		count_timeout = 0;
+static uint64_t		count_reads = 0;
+static uint64_t		count_writes = 0;
+
 static int setnonblock(int);
 static void timeout_cb(struct ev_loop *, struct ev_timer *, int);
 static void io_cb(struct ev_loop *, struct ev_io *, int);
@@ -124,10 +132,29 @@ setnonblock(int fd) {
 }
 
 static void
+stats_cb(struct ev_loop *loop, struct ev_timer *w, int revents) {
+	fprintf(stderr, "active=%" PRIu64
+			" closed=%" PRIu64
+			" timeout=%" PRIu64
+			" reads=%" PRIu64
+			" writes=%" PRIu64
+			"\n",
+		count_active,
+		count_closed,
+		count_timeout,
+		count_reads,
+		count_writes);
+	count_closed = count_timeout = count_reads = count_writes = 0;
+}
+
+static void
 timeout_cb(struct ev_loop *loop, struct ev_timer *w, int revents) {
 	struct client *cli = struct_client_from(w, timeout);
 	ev_io_stop(EV_A_ &cli->io);
 	close(cli->fd);
+	count_active -= 1;
+	count_timeout += 1;
+	count_closed += 1;
 	free(cli);
 }
 
@@ -152,6 +179,7 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 
 	if (revents & EV_READ) {
 		r = read(cli->fd, &rbuf, sizeof(rbuf) - 1);
+		count_reads += 1;
 		rbuf[r] = 0;
 #if SHUTDOWN_HACK
 		shutdown(cli->fd, SHUT_RD); /* vixie hack */
@@ -262,9 +290,12 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 		nmsg_output_write(output, np);
 	} else if (revents & EV_WRITE) {
 		write(cli->fd, response, sizeof(response) - 1);
+		count_writes += 1;
 		ev_io_stop(EV_A_ w);
-		close(cli->fd);
 		ev_timer_stop(EV_A_ &cli->timeout);
+		close(cli->fd);
+		count_active -= 1;
+		count_closed += 1;
 		free(cli);
 	}
 }
@@ -277,6 +308,7 @@ accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	socklen_t client_len = sizeof(client_addr);
 
 	client_fd = accept(w->fd, (struct sockaddr *) &client_addr, &client_len);
+	count_active += 1;
 	if (client_fd == -1)
 		return;
 	client = calloc(1, sizeof(*client));
@@ -349,6 +381,7 @@ main(int argc, char **argv) {
 #endif
 	const char *http_addr, *http_port, *nmsg_addr, *nmsg_port;
 	ev_io ev_accept;
+	ev_timer stats_timer;
 	int http_fd, nmsg_fd;
 	nmsg_res res;
 	static int reuseaddr_on = 1;
@@ -457,6 +490,8 @@ main(int argc, char **argv) {
 	/* libev loop */
 	loop = ev_default_loop(0);
 	ev_io_init(&ev_accept, accept_cb, http_fd, EV_READ);
+	ev_timer_init(&stats_timer, stats_cb, STATS_TIMEOUT, STATS_TIMEOUT);
+	ev_timer_start(loop, &stats_timer);
 	ev_io_start(loop, &ev_accept);
 	ev_loop(loop, 0);
 
