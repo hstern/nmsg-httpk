@@ -20,6 +20,7 @@ clean:
 	rm -f $(BIN)
 
 install:
+	mkdir -p $(DESTDIR)/bin
 	install -m 0755 $(BIN) $(DESTDIR)/bin
 
 .PHONY: all clean install
