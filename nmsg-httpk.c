@@ -187,7 +187,7 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 		memset(&http, 0, sizeof(http));
 		res = nmsg_pbmod_message_init(mod, &http);
 		if (res != nmsg_res_success)
-			err(1, "unable to initialize http message");
+			errx(1, "unable to initialize http message");
 		http.type = NMSG__ISC__HTTP_TYPE__sinkhole;
 
 		ev_io_stop(loop, w);
@@ -366,9 +366,9 @@ query_p0f(struct p0f_response *r,
 	if (read(fd, r, sizeof(*r)) != sizeof(*r))
 		err(1, "p0f socket read error");
 	if (r->magic != P0F_QUERY_MAGIC)
-		err(1, "bad p0f response magic");
+		errx(1, "bad p0f response magic");
 	if (r->type == P0F_RESP_BADQUERY)
-		err(1, "p0f did not honor our query");
+		errx(1, "p0f did not honor our query");
 
 	close(fd);
 }
@@ -442,25 +442,25 @@ main(int argc, char **argv) {
 	/* nmsg output */
 	output = nmsg_output_open_sock(nmsg_fd, NMSG_WBUFSZ_JUMBO);
 	if (output == NULL)
-		err(1, "unable to nmsg_output_open_sock()");
+		errx(1, "unable to nmsg_output_open_sock()");
 
 	/* nmsg modules */
 	ms = nmsg_pbmodset_init(NULL, 0);
 	if (ms == NULL)
-		err(1, "unable to nmsg_pbmodset_init()");
+		errx(1, "unable to nmsg_pbmodset_init()");
 
 	/* http pbnmsg module */
 	mod = nmsg_pbmodset_lookup(ms, NMSG_VENDOR_ISC_ID, MSGTYPE_HTTP_ID);
 	if (mod == NULL)
-		err(1, "unable to acquire module handle");
+		errx(1, "unable to acquire module handle");
 	res = nmsg_pbmod_init(mod, &clos);
 	if (res != nmsg_res_success)
-		err(1, "unable to initialize module");
+		errx(1, "unable to initialize module");
 
 	/* initialize our message */
 	res = nmsg_pbmod_message_init(mod, &http);
 	if (res != nmsg_res_success)
-		err(1, "unable to initialize http message");
+		errx(1, "unable to initialize http message");
 	http.type = NMSG__ISC__HTTP_TYPE__sinkhole;
 
 	/* http socket */
