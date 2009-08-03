@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -O2 -ggdb 
 WARN = -Wall -Werror -Wno-strict-aliasing
-INCLUDE = -I/usr/local/include
+INCLUDE = -I/usr/local/include -I/usr/local/include/nmsg
 LDFLAGS = -L/usr/local/lib -lev -lnmsg
 DESTDIR = /usr/local
 
