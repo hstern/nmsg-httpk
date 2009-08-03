@@ -380,6 +380,8 @@ main(int argc, char **argv) {
 	const char *p0f_path;
 #endif
 	const char *http_addr, *http_port, *nmsg_addr, *nmsg_port;
+	const char *alias_operator = NULL, *alias_group = NULL;
+	unsigned operator, group;
 	ev_io ev_accept;
 	ev_timer stats_timer;
 	int http_fd, nmsg_fd;
@@ -393,20 +395,28 @@ main(int argc, char **argv) {
 	signal(SIGTERM, shutdown_handler);
 
 #if USE_P0F
-	if (argc != 6) {
-		fprintf(stderr, "usage: %s <HTTPaddr> <HTTPport> <NMSGaddr> <NMSGport> <P0Fsock>\n", argv[0]);
+	if (argc < 6 || argc > 8) {
+		fprintf(stderr, "usage: %s <HTTPaddr> <HTTPport> <NMSGaddr> <NMSGport> <P0Fsock> [OperatorAlias] [GroupAlias]\n", argv[0]);
 		return (1);
 	}
 	p0f_path = argv[5];
+	if (argc >= 7)
+		alias_operator = argv[6];
+	if (argc == 8)
+		alias_group = argv[7];
 
 	/* p0f sockaddr */
 	p0f_sock.sun_family = AF_UNIX;
 	strncpy(p0f_sock.sun_path, p0f_path, sizeof(p0f_sock.sun_path));
 #else
-	if (argc != 5) {
-		fprintf(stderr, "usage: %s <HTTPaddr> <HTTPport> <NMSGaddr> <NMSGport>\n", argv[0]);
+	if (argc < 5 || argc > 7) {
+		fprintf(stderr, "usage: %s <HTTPaddr> <HTTPport> <NMSGaddr> <NMSGport> [OperatorAlias] [GroupAlias]\n", argv[0]);
 		return (1);
 	}
+	if (argc >= 6)
+		alias_operator = argv[5];
+	if (argc == 7)
+		alias_group = argv[6];
 #endif
 	http_addr = argv[1];
 	http_port = argv[2];
@@ -467,6 +477,23 @@ main(int argc, char **argv) {
 		sizeof(reuseaddr_on)) == -1)
 	{
 		err(1, "setsockopt failed");
+	}
+
+	/* look up aliases and set operator/group fields */
+	if (alias_operator != NULL) {
+		operator = nmsg_alias_by_value(nmsg_alias_operator, alias_operator);
+		if (operator == 0)
+			errx(1, "unknown operator alias");
+		else
+			nmsg_output_set_operator(output, operator);
+	}
+
+	if (alias_group != NULL) {
+		group = nmsg_alias_by_value(nmsg_alias_group, alias_group);
+		if (group == 0)
+			errx(1, "unknown group alias");
+		else
+			nmsg_output_set_group(output, group);
 	}
 
 #if __FreeBSD__ && ACCF_HACK
