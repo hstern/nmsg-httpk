@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009 by Internet Systems Consortium, Inc. ("ISC")
+ * Copyright (c) 2009, 2011 by Internet Systems Consortium, Inc. ("ISC")
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -70,7 +70,7 @@ http://software.schmorp.de/pkg/libev.html
 #include <ev.h>
 
 #include <nmsg.h>
-#include <nmsg/isc/nmsgpb_isc_http.h>
+#include <nmsg/isc/http.pb-c.h>
 
 #define STATS_TIMEOUT	60.0
 
@@ -101,11 +101,8 @@ struct client {
 
 static struct ev_loop	*loop;
 
-static Nmsg__Isc__Http	http;
 static nmsg_output_t	output;
-static nmsg_pbmod_t	mod;
-static nmsg_pbmodset_t	ms;
-static void		*clos;
+static nmsg_msgmod_t	mod;
 
 static uint64_t		count_active = 0;
 static uint64_t		count_closed = 0;
@@ -165,13 +162,10 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 	static char rbuf[1024];
 	int r = 0;
 	uint32_t srcip, dstip;
-
-	struct timespec ts;
-	Nmsg__NmsgPayload *np;
-	nmsg_res res;
-
+	nmsg_message_t msg;
 	struct sockaddr_in http_sock;
 	socklen_t http_sock_len;
+	Nmsg__Isc__Http	*http;
 
 #if USE_P0F
 	struct p0f_response p;
@@ -184,11 +178,12 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 #if SHUTDOWN_HACK
 		shutdown(cli->fd, SHUT_RD); /* vixie hack */
 #endif
-		memset(&http, 0, sizeof(http));
-		res = nmsg_pbmod_message_init(mod, &http);
-		if (res != nmsg_res_success)
-			errx(1, "unable to initialize http message");
-		http.type = NMSG__ISC__HTTP_TYPE__sinkhole;
+		msg = nmsg_message_init(mod);
+		assert(msg != NULL);
+		http = (Nmsg__Isc__Http *) nmsg_message_get_payload(msg);
+		assert(http != NULL);
+
+		http->type = NMSG__ISC__HTTP_TYPE__sinkhole;
 
 		ev_io_stop(loop, w);
 		ev_io_init(&cli->io, io_cb, cli->fd, EV_WRITE);
@@ -205,89 +200,102 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 		srcip = cli->sock.sin_addr.s_addr;
 		dstip = http_sock.sin_addr.s_addr;
 
-		http.srcip.data = (uint8_t *) &srcip;
-		http.srcip.len = 4;
-		http.has_srcip = true;
+		http->srcip.data = malloc(4);
+		assert(http->srcip.data != NULL);
+		memcpy(http->srcip.data, &srcip, 4);
+		http->srcip.len = 4;
+		http->has_srcip = true;
 
-		http.srcport = ntohs(cli->sock.sin_port);
-		http.has_srcport = true;
+		http->srcport = ntohs(cli->sock.sin_port);
+		http->has_srcport = true;
 
-		http.dstip.data = (uint8_t *) &dstip;
-		http.dstip.len = 4;
-		http.has_dstip = true;
+		http->dstip.data = malloc(4);
+		assert(http->dstip.data != NULL);
+		memcpy(http->dstip.data, &dstip, 4);
+		http->dstip.len = 4;
+		http->has_dstip = true;
 
-		http.dstport = ntohs(http_sock.sin_port);
-		http.has_dstport = true;
+		http->dstport = ntohs(http_sock.sin_port);
+		http->has_dstport = true;
 
-		http.request.data = (uint8_t *) rbuf;
-		http.request.len = r + 1;
-		http.has_request = true;
+		http->request.len = r + 1;
+		http->request.data = malloc(http->request.len);
+		assert(http->request.data != NULL);
+		memcpy(http->request.data, rbuf, http->request.len);
+		http->has_request = true;
 
 #if USE_P0F
 		memset(&p, 0, sizeof(p));
-		query_p0f(&p, srcip, dstip, http.srcport, http.dstport);
+		query_p0f(&p, srcip, dstip, http->srcport, http->dstport);
 		if (p.type == P0F_RESP_OK) {
 			if (p.genre[0] != '\0') {
-				http.p0f_genre.data = p.genre;
-				http.p0f_genre.len = strlen((char *) p.genre) + 1;
-				http.has_p0f_genre = true;
+				http->p0f_genre.len = strlen((char *) p.genre) + 1;
+				http->p0f_genre.data = malloc(http->p0f_genre.len);
+				assert(http->p0f_genre.data != NULL);
+				memcpy(http->p0f_genre.data, p.genre, http->p0f_genre.len);
+				http->has_p0f_genre = true;
 			}
 			if (p.detail[0] != '\0') {
-				http.p0f_detail.data = p.detail;
-				http.p0f_detail.len = strlen((char *) p.detail) + 1;
-				http.has_p0f_detail = true;
+				http->p0f_detail.len = strlen((char *) p.detail) + 1;
+				http->p0f_detail.data = malloc(http->p0f_detail.len);
+				assert(http->p0f_detail.data != NULL);
+				memcpy(http->p0f_detail.data, p.detail, http->p0f_detail.len);
+				http->has_p0f_detail = true;
 			}
 			if (p.link[0] != '\0') {
-				http.p0f_link.data = p.link;
-				http.p0f_link.len = strlen((char *) p.link) + 1;
-				http.has_p0f_link = true;
+				http->p0f_link.len = strlen((char *) p.link) + 1;
+				http->p0f_link.data = malloc(http->p0f_link.len);
+				assert(http->p0f_link.data != NULL);
+				memcpy(http->p0f_link.data, p.link, http->p0f_link.len);
+				http->has_p0f_link = true;
 			}
 			if (p.tos[0] != '\0') {
-				http.p0f_tos.data = p.tos;
-				http.p0f_tos.len = strlen((char *) p.tos) + 1;
-				http.has_p0f_tos = true;
+				http->p0f_tos.len = strlen((char *) p.tos) + 1;
+				http->p0f_tos.data = malloc(http->p0f_tos.len);
+				assert(http->p0f_tos.data != NULL);
+				memcpy(http->p0f_tos.data, p.tos, http->p0f_tos.len);
+				http->has_p0f_tos = true;
 			}
 
 			if (p.dist != 0) {
-				http.p0f_dist = p.dist;
-				http.has_p0f_dist = true;
+				http->p0f_dist = p.dist;
+				http->has_p0f_dist = true;
 			}
 
 			if (p.fw != 0) {
-				http.p0f_fw = p.fw;
-				http.has_p0f_fw = true;
+				http->p0f_fw = p.fw;
+				http->has_p0f_fw = true;
 			}
 
 			if (p.nat != 0) {
-				http.p0f_nat = p.nat;
-				http.has_p0f_nat = true;
+				http->p0f_nat = p.nat;
+				http->has_p0f_nat = true;
 			}
 
 			if (p.real != 0) {
-				http.p0f_real = p.real;
-				http.has_p0f_real = true;
+				http->p0f_real = p.real;
+				http->has_p0f_real = true;
 			}
 
 			if (p.score != 0) {
-				http.p0f_score = p.score;
-				http.has_p0f_score = true;
+				http->p0f_score = p.score;
+				http->has_p0f_score = true;
 			}
 
 			if (p.mflags != 0) {
-				http.p0f_mflags = p.mflags;
-				http.has_p0f_mflags = true;
+				http->p0f_mflags = p.mflags;
+				http->has_p0f_mflags = true;
 			}
 
-			http.p0f_uptime = p.uptime;
-			http.has_p0f_uptime = true;
+			http->p0f_uptime = p.uptime;
+			http->has_p0f_uptime = true;
 		}
 #endif
 
-		nmsg_timespec_get(&ts);
-		np = nmsg_payload_from_message(&http, NMSG_VENDOR_ISC_ID,
-					       MSGTYPE_HTTP_ID, &ts);
-		assert(np != NULL);
-		nmsg_output_write(output, np);
+		nmsg_message_set_time(msg, NULL);
+		nmsg_message_update(msg);
+		nmsg_output_write(output, msg);
+		nmsg_message_destroy(&msg);
 	} else if (revents & EV_WRITE) {
 		write(cli->fd, response, sizeof(response) - 1);
 		count_writes += 1;
@@ -332,9 +340,7 @@ accept_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 static void
 shutdown_handler(int signum) {
 	ev_unloop(loop, EVUNLOOP_ALL);
-	nmsg_pbmod_fini(mod, &clos);
 	nmsg_output_close(&output);
-	nmsg_pbmodset_destroy(&ms);
 	exit(0);
 }
 
@@ -385,7 +391,6 @@ main(int argc, char **argv) {
 	ev_io ev_accept;
 	ev_timer stats_timer;
 	int http_fd, nmsg_fd;
-	nmsg_res res;
 	static int reuseaddr_on = 1;
 	struct sockaddr_in http_sock, nmsg_sock;
 
@@ -423,6 +428,9 @@ main(int argc, char **argv) {
 	nmsg_addr = argv[3];
 	nmsg_port = argv[4];
 
+	/* nmsg */
+	assert(nmsg_init() == nmsg_res_success);
+
 	/* nmsg socket */
 	if (inet_pton(AF_INET, nmsg_addr, &nmsg_sock.sin_addr)) {
 		nmsg_sock.sin_family = AF_INET;
@@ -444,24 +452,10 @@ main(int argc, char **argv) {
 	if (output == NULL)
 		errx(1, "unable to nmsg_output_open_sock()");
 
-	/* nmsg modules */
-	ms = nmsg_pbmodset_init(NULL, 0);
-	if (ms == NULL)
-		errx(1, "unable to nmsg_pbmodset_init()");
-
-	/* http pbnmsg module */
-	mod = nmsg_pbmodset_lookup(ms, NMSG_VENDOR_ISC_ID, MSGTYPE_HTTP_ID);
+	/* http message module */
+	mod = nmsg_msgmod_lookup_byname("ISC", "http");
 	if (mod == NULL)
 		errx(1, "unable to acquire module handle");
-	res = nmsg_pbmod_init(mod, &clos);
-	if (res != nmsg_res_success)
-		errx(1, "unable to initialize module");
-
-	/* initialize our message */
-	res = nmsg_pbmod_message_init(mod, &http);
-	if (res != nmsg_res_success)
-		errx(1, "unable to initialize http message");
-	http.type = NMSG__ISC__HTTP_TYPE__sinkhole;
 
 	/* http socket */
 	if (inet_pton(AF_INET, http_addr, &http_sock.sin_addr)) {
