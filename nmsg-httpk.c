@@ -391,7 +391,7 @@ main(int argc, char **argv) {
 	ev_io ev_accept;
 	ev_timer stats_timer;
 	int http_fd, nmsg_fd;
-	static int reuseaddr_on = 1;
+	static int on = 1;
 	struct sockaddr_in http_sock, nmsg_sock;
 
 	/* setup signal handlers */
@@ -441,6 +441,10 @@ main(int argc, char **argv) {
 	nmsg_fd = socket(PF_INET, SOCK_DGRAM, 0);
 	if (nmsg_fd < 0)
 		err(1, "socket failed");
+	if (setsockopt(nmsg_fd, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on)) == -1)
+	{
+		err(1, "setsockopt failed");
+	}
 	if (connect(nmsg_fd, (struct sockaddr *) &nmsg_sock,
 		    sizeof(struct sockaddr_in)) < 0)
 	{
@@ -467,8 +471,7 @@ main(int argc, char **argv) {
 	http_fd = socket(PF_INET, SOCK_STREAM, 0);
 	if (http_fd < 0)
 		err(1, "listen failed");
-	if (setsockopt(http_fd, SOL_SOCKET, SO_REUSEADDR, &reuseaddr_on,
-		sizeof(reuseaddr_on)) == -1)
+	if (setsockopt(http_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) == -1)
 	{
 		err(1, "setsockopt failed");
 	}
