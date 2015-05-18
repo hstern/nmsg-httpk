@@ -1,0 +1,13 @@
+Requires nmsg available from  Farsight Security.
+Requires libev.
+Just run "make".
+Edit the Makefile to update install location if necessary.
+Run "make install".
+
+Typical usage:
+  /usr/local/bin/nmsg-httpk 0.0.0.0 80 127.0.0.1 11430 base ConfickerC
+
+  Listens on all interfaces port 80 and sends NMSG output to
+  loopback port 11430.  Sets Operator to "base" and Group to "ConfickerC".
+  An nmsgtool listening to port 11430 would then take care of forwarding
+  data to other SIE infrastructure.
