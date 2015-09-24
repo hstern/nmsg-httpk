@@ -1,3 +1,9 @@
+nmsg-httpk (0.14-2) debian-fsi; urgency=medium
+
+  * Update copyright.
+
+ -- Henry Stern <stern@fsi.io>  Thu, 24 Sep 2015 12:32:13 -0300
+
 nmsg-httpk (0.14-1) debian-fsi; urgency=low
 
   * Initial release.
