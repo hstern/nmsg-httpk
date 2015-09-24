@@ -1,0 +1,19 @@
+Source: nmsg-httpk
+Section: utils
+Priority: extra
+Maintainer: Farsight Security, Inc. <software@farsightsecurity.com>
+Build-Depends: debhelper (>= 9), libnmsg-dev, libev-dev
+Standards-Version: 3.9.5
+
+Package: nmsg-httpk
+Section: utils
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}
+Description: C10K web server with NMSG logging
+ C10K web server with NMSG logging utilized primarily for Conficker Working
+ Group
+ .
+ Listens on all interfaces port 80 and sends NMSG output to
+ loopback port 11430.  Sets Operator to "base" and Group to "ConfickerC".
+ An nmsgtool listening to port 11430 would then take care of forwarding
+ data to other SIE infrastructure.

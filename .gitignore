@@ -1,0 +1,7 @@
+*.o
+nmsg-httpk
+nmsg-httpk-p0f
+debian/files
+debian/*.log
+debian/*.substvars
+debian/nmsg-httpk

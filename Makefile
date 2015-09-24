@@ -1,8 +1,8 @@
 CC = gcc
-CFLAGS = -O2 -ggdb 
-WARN = -Wall -Werror -Wno-strict-aliasing
-INCLUDE = -I/usr/local/include -I/usr/local/include/nmsg
-LDFLAGS = -L/usr/local/lib -lev -lnmsg
+CFLAGS = -O2 -ggdb -fstack-protector --param=ssp-buffer-size=4
+WARN = -Wall -Werror -Wno-strict-aliasing -Wformat -Werror=format-security
+INCLUDE = 
+LDFLAGS = -Wl,-z,relro -lev -lnmsg
 DESTDIR = /usr/local
 
 BIN = nmsg-httpk nmsg-httpk-p0f

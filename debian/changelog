@@ -1,0 +1,5 @@
+nmsg-httpk (0.14-1) debian-fsi; urgency=low
+
+  * Initial release.
+
+ -- Henry Stern <stern@rd2.iad1.fsi.io>  Thu, 24 Sep 2015 13:58:16 +0000
