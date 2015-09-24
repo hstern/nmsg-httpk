@@ -66,11 +66,12 @@ http://software.schmorp.de/pkg/libev.html
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <inttypes.h>
 
 #include <ev.h>
 
 #include <nmsg.h>
-#include <nmsg/isc/http.pb-c.h>
+#include <nmsg/base/http.pb-c.h>
 
 #define STATS_TIMEOUT	60.0
 
