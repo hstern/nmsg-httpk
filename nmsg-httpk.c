@@ -298,7 +298,8 @@ io_cb(struct ev_loop *loop, struct ev_io *w, int revents) {
 		nmsg_output_write(output, msg);
 		nmsg_message_destroy(&msg);
 	} else if (revents & EV_WRITE) {
-		write(cli->fd, response, sizeof(response) - 1);
+		/* ignore unused result */
+		if (write(cli->fd, response, sizeof(response) - 1)) {}
 		count_writes += 1;
 		ev_io_stop(EV_A_ w);
 		ev_timer_stop(EV_A_ &cli->timeout);
