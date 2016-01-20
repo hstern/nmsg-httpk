@@ -1,3 +1,11 @@
+nmsg-httpk (0.15.0) debian-fsi; urgency=medium
+
+  * Relicense as Apache 2.0
+  * Include inttypes.h
+  * io_cb: ignore unused result from write()
+
+ -- Henry Stern <stern@fsi.io>  Wed, 20 Jan 2016 09:16:07 -0400
+
 nmsg-httpk (0.14-2) debian-fsi; urgency=medium
 
   * Update copyright.
