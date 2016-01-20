@@ -57,6 +57,7 @@ http://software.schmorp.de/pkg/libev.html
 #include <err.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdarg.h>
